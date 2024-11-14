@@ -1,0 +1,249 @@
+---
+- hosts: "{{ host_variable }}"
+  vars:
+    ansible_user: "mousse"
+    ansible_port: 480
+
+  tasks:
+    # - name: Print my name
+    #   command: whoami
+    #   register: msg
+    # - debug: var=msg.stdout_lines
+
+  # Copy SSH keys to access git repos
+    - name: Copy ssh keys
+      ansible.builtin.copy:
+        src: ~/.ssh/id_rsa
+        dest: /home/mousse/.ssh/id_rsa
+        mode: '0600'
+
+    - name: Copy ssh keys
+      ansible.builtin.copy:
+        src: ~/.ssh/id_rsa.pub
+        dest: /home/mousse/.ssh/id_rsa.pub
+        mode: '0600'
+
+  # Set locales properly according to client (macbook)
+    - name: dealing with locale
+      ansible.builtin.lineinfile:
+        path: /etc/environment
+        state: present
+        line: 'LC_ALL=en_GB.UTF-8'
+      become: yes
+      become_user: root
+      become_method: sudo
+
+    - name: dealing with locale
+      ansible.builtin.lineinfile:
+        path: /etc/locale.gen
+        state: present
+        line: 'en_GB.UTF-8 UTF-8'
+      become: yes
+      become_user: root
+      become_method: sudo
+
+    # - name: Ensures /etc/locale.conf exists
+    #   file: 
+    #     path: /etc/locale.conf
+    #     state: present
+
+    # - name: dealing with locale
+    #   ansible.builtin.lineinfile:
+    #     path: /etc/locale.conf
+    #     state: present
+    #     line: 'LANG=en_GB.UTF-8'
+    #   become: yes
+    #   become_user: root
+    #   become_method: sudo
+
+    - name: Generate locale
+      shell: locale-gen en_GB.UTF.8
+      become: yes
+      become_user: root
+      become_method: sudo
+
+  # Install rest of needed packages (lot of them just for erlang build)
+    - name: Install additional packages
+      apt:
+        name: "{{ item }}"
+        state: present
+      with_items:
+          - tmux
+          - mc
+          - mosh
+          - gcc
+          - ripgrep
+          - fzf
+          - zoxide
+          - nginx
+          - build-essential
+          - gnupg
+          - autoconf
+          - libssl-dev
+          - libncurses5-dev
+          - zip 
+          - sed 
+          - tar 
+          - make 
+          - perl 
+          - openssl 
+          - flex 
+          - bison  
+          - libssl-dev 
+          - unixodbc-dev 
+          - libxml2-utils 
+          - g++
+      become: yes
+      become_user: root
+      become_method: sudo
+
+  # Clone dotfiles and copy files as needed
+    - name: Clone dotfiles
+      git:
+        repo: git@github.com:michalhorcic/dotfiles.git
+        dest: /home/mousse/dotfiles
+        ssh_opts: -o StrictHostKeyChecking=no
+        accept_hostkey: yes
+        clone: yes
+        update: yes
+      register: msg
+    - debug: var=msg.stdout_lines
+
+    - name: Clone powerlevel10k
+      git:
+        repo: https://github.com/romkatv/powerlevel10k.git
+        dest: /home/mousse/.oh-my-zsh/custom/themes/powerlevel10k
+        ssh_opts: -o StrictHostKeyChecking=no
+        accept_hostkey: yes
+        clone: yes
+        depth: 1
+        update: yes
+      register: msg
+    - debug: var=msg.stdout_lines
+
+    - name: Copy zshrc config
+      ansible.builtin.copy:
+        src: /home/mousse/dotfiles/.zshrc
+        remote_src: true
+        dest: /home/mousse/.zshrc
+
+    - name: Copy tmux config
+      ansible.builtin.copy:
+        src: /home/mousse/dotfiles/.tmux.conf
+        remote_src: true
+        dest: /home/mousse/.tmux.conf
+
+    - name: Copy p10k config
+      ansible.builtin.copy:
+        src: /home/mousse/dotfiles/.p10k.zsh
+        remote_src: true
+        dest: /home/mousse/.p10k.zsh
+
+    - name: Install zsh autosuggestions plugin
+      git:
+        repo: https://github.com/zsh-users/zsh-autosuggestions
+        dest: ~/.oh-my-zsh/custom/plugins/zsh-autosuggestions
+        ssh_opts: -o StrictHostKeyChecking=no
+        accept_hostkey: yes
+        clone: yes
+        update: yes
+
+  # Install Neovim - version from SNAP to have new one
+    - name: snapd present
+      ansible.builtin.apt:
+        name: snapd
+        state: present
+      become: yes
+      become_user: root
+      become_method: sudo
+
+    - name: install neovim
+      ansible.builtin.snap:
+        name: nvim
+        # channel: latest/edge
+        classic: yes
+      become: yes
+      become_user: root
+      become_method: sudo
+
+    - name: add snap apps to path
+      ansible.builtin.lineinfile:
+        path: ~/.zshrc
+        state: present
+        line: 'export PATH="/snap/bin:$PATH"'
+
+  # Try to install neovim plugins (needs work)
+    # - name: Install plug.vim
+      # shell: curl -fLo ~/.local/share/nvim/site/autoload/plug.vim --create-dirs https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim
+   
+    # - name: Ensures .config exists
+      # file: 
+        # path: ~/.config/nvim 
+        # state: directory
+
+    # - name: Copy nvim plugins config
+      # ansible.builtin.copy:
+        # src: /home/mousse/dotfiles/after/
+        # remote_src: true
+        # dest: /home/mousse/.config/nvim/after/
+
+# TODO Replace /Users/michalhorcic/ with current home in ~/.config/nvim/after/lspconfig.rc.vim
+# TODO Add elixir-ls
+
+    # - name: Copy vimrc config from dotfiles
+      # ansible.builtin.copy:
+        # src: /home/mousse/dotfiles/.vimrc
+        # remote_src: true
+        # dest: /home/mousse/.config/nvim/init.vim
+
+    # - name: Install neovim plugins 
+    #   shell: /snap/bin/nvim +PlugInstall +qall > /dev/null
+
+    # - name: Install neovim plugins 
+    #   shell: bash <(curl -s https://raw.githubusercontent.com/lunarvim/lunarvim/master/utils/installer/install.sh)
+
+    - name: Allow dev ports and mosh
+      ufw: 
+        rule: allow 
+        port: "{{ item }}"
+      tags:
+      - ufw
+      with_items:
+        - 8080
+        - 8000
+        - 4000
+        - 60000
+        - 60001
+      become: yes
+      become_user: root
+      become_method: sudo
+
+    - name: Set git user
+      community.general.git_config:
+        name: user.email
+        scope: global
+        value: michalhorcic@gmail.com
+
+    - name: Set git user
+      community.general.git_config:
+        name: user.name
+        scope: global
+        value: "Michal Horcic"
+
+  # Install Node with NVM
+    # - name: "nvm"
+    #   shell: >
+    #     curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.1/install.sh | zsh
+    #   args:
+    #     executable: /bin/zsh
+    #     chdir: "{{ ansible_env.HOME }}"
+    #     creates: "{{ ansible_env.HOME }}/.nvm/nvm.sh"
+
+    # - name: Install Node.js
+    #   shell: '. {{ ansible_env.HOME }}/.nvm/nvm.sh && nvm install node'
+    #   args:
+    #     creates: "{{ ansible_env.HOME }}/.nvm/versions/node"
+    #     chdir: "{{ ansible_env.HOME }}"
+    #     executable: /bin/zsh
+
+# git clone https://github.com/asdf-vm/asdf.git ~/.asdf

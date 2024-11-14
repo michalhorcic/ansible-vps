@@ -1,0 +1,38 @@
+---
+- hosts: "{{ host_variable }}"
+  vars:
+    ansible_user: "mousse"
+    ansible_port: 480
+
+  tasks:
+    - name: Install ASDF
+      git:
+        repo: https://github.com/asdf-vm/asdf.git
+        dest: ~/.asdf
+        ssh_opts: -o StrictHostKeyChecking=no
+        accept_hostkey: yes
+        clone: yes
+        update: yes
+
+  # Add some IF plugin already present
+    # - name: Install Erlang plugin
+    #   shell: ~/.asdf/bin/asdf plugin add erlang
+    # - name: Install Elixir plugin
+    #   shell: ~/.asdf/bin/asdf plugin add elixir
+    # - name: Install Node plugin
+    #   shell: ~/.asdf/bin/asdf plugin add nodejs
+    - name: Install Erlang
+      shell: ~/.asdf/bin/asdf install erlang 25.0
+    - name: Install Elixir
+      shell: ~/.asdf/bin/asdf install elixir 1.13.4-otp-25
+  # FIX - for some reason wont install or return success
+    - name: Install Node
+      shell: ~/.asdf/bin/asdf install nodejs 16.13.2
+    - name: Create .tool-versions
+      copy:
+        dest: "~/.tool-versions"
+        content: |
+          erlang 25.0
+          elixir 1.13.4-otp-25
+          nodejs 16.13.2
+# git clone https://github.com/asdf-vm/asdf.git ~/.asdf

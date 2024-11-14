@@ -1,0 +1,129 @@
+---
+- hosts: "{{ host_variable }}"
+  vars:
+    non_root_user_name: "mousse"
+    ssh_port: 480
+    logwatch_email: "michalhorcic@gmail.com"
+    required_packages:
+      - ufw
+      - fail2ban
+      - unattended-upgrades
+      - logwatch
+      - postfix
+
+  tasks:
+    - debug:
+        var: result.stdout_lines
+    - name: Update APT package cache
+      apt: update_cache=yes cache_valid_time=3600
+
+    - name: Install basic packages
+      apt:
+        name: "{{ item }}"
+        state: present
+      with_items:
+          - sudo
+          - git
+          - zsh
+          - rsync
+
+    - name: Create non root user
+      user:
+        name: "{{ non_root_user_name }}"
+        system: yes
+        shell: /bin/zsh
+        groups: sudo
+        append: yes
+
+    - name: Cloning oh-my-zsh
+      git:
+        repo: https://github.com/robbyrussell/oh-my-zsh
+        dest: "/home/{{ non_root_user_name }}/.oh-my-zsh"
+      become: yes
+      become_user: "{{ non_root_user_name }}"
+
+    - name: Sudo without password for sudo group
+      lineinfile:
+        path: /etc/sudoers
+        state: present
+        regexp: '%sudo\s'
+        line: '%sudo	ALL=(ALL:ALL) NOPASSWD:ALL'
+
+    - name: Add pub key to authorized keys for non root user
+      authorized_key: 
+        user: "{{ non_root_user_name }}"
+        key: "{{ lookup('file', lookup('env','HOME') + '/.ssh/id_rsa.pub') }}"
+
+    - name: Install required packages
+      apt: 
+        state: present 
+        name: "{{ item }}"
+      with_items: "{{ required_packages }}"
+
+    - name: Setup ufw
+      ufw: 
+        state: enabled 
+        policy: deny
+      tags:
+      - ufw
+
+    - name: Allow ssh traffic
+      ufw: 
+        rule: allow 
+        port: "{{ ssh_port }}"
+        proto: tcp
+      tags:
+      - ufw
+
+    - name: Allow http and https traffic
+      ufw: 
+        rule: allow 
+        port: "{{ item }}"
+      tags:
+      - ufw
+      with_items:
+        - 80
+        - 443
+
+    - name: Set up Postfix to relay mail
+      debconf: 
+        name: postfix
+        question: "{{ item.question }}"
+        value: "{{ item.value }}"
+        vtype: "{{ item.vtype }}"
+      with_items:
+        - { question: 'postfix/mailname', value: '{{ ansible_fqdn }}', vtype: 'string' }
+        - { question: 'postfix/main_mailer_type', value: 'Internet Site', vtype: 'string' }
+
+    - name: Email log summary daily
+      lineinfile: 
+        dest: /etc/cron.daily/00logwatch
+        regexp: "^/usr/sbin/logwatch"
+        line: "/usr/sbin/logwatch --output mail --mailto {{ logwatch_email }} --detail high"
+        state: present 
+        create: yes
+
+    - name: Change ssh port
+      lineinfile: 
+        path: /etc/ssh/sshd_config
+        regexp: '^Port\s'
+        line: "Port {{ ssh_port }}"
+        state: present
+
+    - name: Disallow password authentication
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: "^PasswordAuthentication"
+        line: "PasswordAuthentication no"
+        state: present
+
+    - name: Disallow root SSH access
+      lineinfile:
+        dest: /etc/ssh/sshd_config
+        regexp: "^PermitRootLogin"
+        line: "PermitRootLogin no"
+        state: present
+
+    - name: Restart ssh
+      service: name=ssh state=restarted
+

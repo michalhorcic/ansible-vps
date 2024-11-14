@@ -1,0 +1,7 @@
+---
+- hosts: "{{ host_variable }}"
+  vars:
+    ansible_user: "mousse"
+    ansible_port: 480
+
+  tasks:

@@ -1,0 +1,17 @@
+---
+- hosts: "{{ host_variable }}"
+  vars:
+    ansible_user: "mousse"
+    ansible_port: 480
+
+  tasks:
+    - name: Clone Drinkin project
+      git:
+        repo: git@github.com:michalhorcic/drinkin.git
+        dest: ~/projects/drinkin
+        ssh_opts: -o StrictHostKeyChecking=no
+        accept_hostkey: yes
+        clone: yes
+        update: yes
+      register: msg
+    - debug: var=msg.stdout_lines

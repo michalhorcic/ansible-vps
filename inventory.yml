@@ -1,0 +1,5 @@
+debian:
+  hosts:
+    remdev:
+      ansible_port: 22
+      ansible_host: 209.38.107.181
