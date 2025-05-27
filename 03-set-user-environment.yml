@@ -74,6 +74,8 @@
           - gcc
           - ripgrep
           - fzf
+          - curl
+          - wget
           - zoxide
           - nginx
           - build-essential
@@ -109,35 +111,11 @@
       register: msg
     - debug: var=msg.stdout_lines
 
-    - name: Clone powerlevel10k
-      git:
-        repo: https://github.com/romkatv/powerlevel10k.git
-        dest: /home/mousse/.oh-my-zsh/custom/themes/powerlevel10k
-        ssh_opts: -o StrictHostKeyChecking=no
-        accept_hostkey: yes
-        clone: yes
-        depth: 1
-        update: yes
-      register: msg
-    - debug: var=msg.stdout_lines
-
-    - name: Copy zshrc config
-      ansible.builtin.copy:
-        src: /home/mousse/dotfiles/.zshrc
-        remote_src: true
-        dest: /home/mousse/.zshrc
-
     - name: Copy tmux config
       ansible.builtin.copy:
         src: /home/mousse/dotfiles/.tmux.conf
         remote_src: true
         dest: /home/mousse/.tmux.conf
-
-    - name: Copy p10k config
-      ansible.builtin.copy:
-        src: /home/mousse/dotfiles/.p10k.zsh
-        remote_src: true
-        dest: /home/mousse/.p10k.zsh
 
     - name: Install zsh autosuggestions plugin
       git:
@@ -165,6 +143,15 @@
       become: yes
       become_user: root
       become_method: sudo
+
+    # Create empty .zshrc file if it doesn't exist
+    - name: Create empty .zshrc file
+      file:
+        path: "{{ ansible_env.HOME }}/.zshrc"
+        state: touch
+        mode: '0644'
+        modification_time: preserve
+        access_time: preserve
 
     - name: add snap apps to path
       ansible.builtin.lineinfile:
@@ -211,6 +198,7 @@
       with_items:
         - 8080
         - 8000
+        - 5432
         - 4000
         - 60000
         - 60001
@@ -247,3 +235,66 @@
     #     executable: /bin/zsh
 
 # git clone https://github.com/asdf-vm/asdf.git ~/.asdf
+
+    # Install Starship prompt
+    - name: Download Starship install script
+      get_url:
+        url: https://starship.rs/install.sh
+        dest: /tmp/starship-install.sh
+        mode: '0755'
+      become: yes
+
+    - name: Install Starship
+      command: /tmp/starship-install.sh --yes
+      become: yes
+      args:
+        creates: /usr/local/bin/starship
+
+    - name: Add Starship init to zshrc
+      ansible.builtin.lineinfile:
+        path: /home/mousse/.zshrc
+        line: 'eval "$(starship init zsh)"'
+        state: present
+
+    # Install ASDF version manager
+    - name: Download ASDF
+      get_url:
+        url: https://github.com/asdf-vm/asdf/releases/download/v0.16.3/asdf-v0.16.3-linux-amd64.tar.gz
+        dest: /tmp/asdf.tar.gz
+        mode: '0644'
+
+    - name: Create ASDF directory
+      file:
+        path: "{{ ansible_env.HOME }}/.asdf"
+        state: directory
+        mode: '0755'
+
+    - name: Extract ASDF
+      unarchive:
+        src: /tmp/asdf.tar.gz
+        dest: "{{ ansible_env.HOME }}/.asdf"
+        remote_src: yes
+
+    - name: Add ASDF to zshrc
+      ansible.builtin.blockinfile:
+        path: /home/mousse/.zshrc
+        marker: "# {mark} ASDF BLOCK"
+        block: |
+          # ASDF Version Manager
+          export PATH=$HOME/.asdf:$PATH
+          export PATH="${ASDF_DATA_DIR:-$HOME/.asdf}/shims:$PATH"
+          HISTFILE=~/.zsh_history
+          HISTSIZE=10000
+          SAVEHIST=1000
+          setopt SHARE_HISTORY
+
+    - name: Install common ASDF plugins
+      command: "{{ ansible_env.HOME }}/.asdf/asdf plugin add {{ item }}"
+      args:
+        creates: "{{ ansible_env.HOME }}/.asdf/plugins/{{ item }}"
+      loop:
+        - nodejs
+        - erlang
+        - elixir
+        - python
+

@@ -3,36 +3,52 @@
   vars:
     ansible_user: "mousse"
     ansible_port: 480
+    nodejs_version: "23.8.0"
+    erlang_version: "27.2.3"
+    elixir_version: "1.18.2-otp-27"
 
   tasks:
-    - name: Install ASDF
-      git:
-        repo: https://github.com/asdf-vm/asdf.git
-        dest: ~/.asdf
-        ssh_opts: -o StrictHostKeyChecking=no
-        accept_hostkey: yes
-        clone: yes
-        update: yes
+    - name: Install latest NodeJS
+      shell: |
+        source ~/.zshrc
+        $HOME/.asdf/asdf install nodejs {{ nodejs_version }}
+        $HOME/.asdf/asdf global nodejs {{ nodejs_version }}
+      args:
+        executable: /bin/zsh
+        creates: "{{ ansible_env.HOME }}/.asdf/installs/nodejs/{{ nodejs_version }}"
 
-  # Add some IF plugin already present
-    # - name: Install Erlang plugin
-    #   shell: ~/.asdf/bin/asdf plugin add erlang
-    # - name: Install Elixir plugin
-    #   shell: ~/.asdf/bin/asdf plugin add elixir
-    # - name: Install Node plugin
-    #   shell: ~/.asdf/bin/asdf plugin add nodejs
     - name: Install Erlang
-      shell: ~/.asdf/bin/asdf install erlang 25.0
+      shell: |
+        source ~/.zshrc
+        $HOME/.asdf/asdf install erlang {{ erlang_version }}
+        $HOME/.asdf/asdf global erlang {{ erlang_version }}
+      args:
+        executable: /bin/zsh
+        creates: "{{ ansible_env.HOME }}/.asdf/installs/erlang/{{ erlang_version }}"
+
     - name: Install Elixir
-      shell: ~/.asdf/bin/asdf install elixir 1.13.4-otp-25
-  # FIX - for some reason wont install or return success
-    - name: Install Node
-      shell: ~/.asdf/bin/asdf install nodejs 16.13.2
-    - name: Create .tool-versions
+      shell: |
+        source ~/.zshrc
+        $HOME/.asdf/asdf install elixir {{ elixir_version }}
+        $HOME/.asdf/asdf global elixir {{ elixir_version }}
+      args:
+        executable: /bin/zsh
+        creates: "{{ ansible_env.HOME }}/.asdf/installs/elixir/{{ elixir_version }}"
+
+    # Set global versions and create .tool-versions file
+    - name: Create .tool-versions file
       copy:
-        dest: "~/.tool-versions"
+        dest: "{{ ansible_env.HOME }}/.tool-versions"
         content: |
-          erlang 25.0
-          elixir 1.13.4-otp-25
-          nodejs 16.13.2
-# git clone https://github.com/asdf-vm/asdf.git ~/.asdf
+          nodejs {{ nodejs_version }}
+          erlang {{ erlang_version }}
+          elixir {{ elixir_version }}
+
+    # Install Hex and Rebar for Elixir
+    - name: Install Hex and Rebar
+      shell: |
+        source ~/.zshrc
+        mix local.hex --force
+        mix local.rebar --force
+      args:
+        executable: /bin/zsh

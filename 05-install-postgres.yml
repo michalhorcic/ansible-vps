@@ -3,45 +3,116 @@
   vars:
     ansible_user: "mousse"
     ansible_port: 480
+    postgresql_version: "17"
+    timescaledb_version: "2.18.2"
 
-  pre_tasks:
-    - name: Install additional packages
-      apt:
-        name: "{{ item }}"
-        state: present
-      with_items:
-        - postgresql
-        - postgresql-contrib
-        - python3-psycopg2
-      become: yes
-      become_user: root
-      become_method: sudo
 
   tasks:
-    - name: "Find out if PostgreSQL is initialized"
-      ansible.builtin.stat:
-        path: "/var/lib/pgsql/data/pg_hba.conf"
-      register: postgres_data
+    # Add PostgreSQL repository
+    - name: Add PostgreSQL repository key
+      apt_key:
+        url: https://www.postgresql.org/media/keys/ACCC4CF8.asc
+        state: present
       become: yes
-      become_user: root
-      become_method: sudo
 
-    # - name: "Initialize PostgreSQL"
-    #   shell: "postgresql-setup initdb"
-    #   when: not postgres_data.stat.exists
-    #   become: yes
-    #   become_user: root
-    #   become_method: sudo
- 
-    - name: "Start and enable services"
-      service: "name={{ item }} state=started enabled=yes"
-      with_items:
-        - postgresql
+    - name: Add PostgreSQL repository
+      apt_repository:
+        repo: deb http://apt.postgresql.org/pub/repos/apt {{ ansible_distribution_release }}-pgdg main
+        state: present
+        filename: pgdg
       become: yes
-      become_user: root
-      become_method: sudo
 
-  handlers:
-    - name: restart postgres
-      service: name=postgresql state=restarted
+    # Add TimescaleDB repository
+    - name: Add TimescaleDB repository key
+      apt_key:
+        url: https://packagecloud.io/timescale/timescaledb/gpgkey
+        state: present
+      become: yes
+
+    - name: Add TimescaleDB repository
+      apt_repository:
+        repo: deb https://packagecloud.io/timescale/timescaledb/debian/ {{ ansible_distribution_release }} main
+        state: present
+        filename: timescaledb
+      become: yes
+
+    # Install required Python PostgreSQL adapter
+    - name: Install psycopg2
+      apt:
+        name: python3-psycopg2
+        state: present
+      become: yes
+
+    # Install PostgreSQL and TimescaleDB
+    - name: Install PostgreSQL and TimescaleDB
+      apt:
+        name: 
+          - "postgresql-{{ postgresql_version }}"
+          - "postgresql-contrib-{{ postgresql_version }}"
+          - "timescaledb-2-postgresql-{{ postgresql_version }}"
+          - python3-psycopg2
+        state: present
+        update_cache: yes
+      become: yes
+
+    # Configure TimescaleDB
+    - name: Add TimescaleDB to shared_preload_libraries
+      lineinfile:
+        path: "/etc/postgresql/{{ postgresql_version }}/main/postgresql.conf"
+        line: "shared_preload_libraries = 'timescaledb'"
+        regexp: "^shared_preload_libraries"
+        state: present
+      become: yes
+
+    # Restart PostgreSQL to apply changes
+    - name: Restart PostgreSQL
+      service:
+        name: postgresql
+        state: restarted
+      become: yes
+
+    # Create PostgreSQL user and database
+    - name: Create PostgreSQL user
+      become: yes  # First become root
+      become_method: sudo
+      shell: |
+        su - postgres -c 'psql -c "CREATE USER am WITH PASSWORD '\''am'\'' SUPERUSER CREATEDB;"'
+      ignore_errors: yes  # In case user already exists
+
+    - name: Create PostgreSQL database
+      become: yes  # First become root
+      become_method: sudo
+      shell: |
+        su - postgres -c 'psql -c "CREATE DATABASE am OWNER am;"'
+      ignore_errors: yes  # In case database already exists
+
+    # Enable TimescaleDB extension
+    - name: Enable TimescaleDB extension
+      become: yes  # First become root
+      become_method: sudo
+      shell: |
+        su - postgres -c 'psql -d am -c "CREATE EXTENSION IF NOT EXISTS timescaledb;"'
+      ignore_errors: yes
+
+    # Configure PostgreSQL to listen on all addresses
+    - name: Configure PostgreSQL to listen on all addresses
+      lineinfile:
+        path: "/etc/postgresql/{{ postgresql_version }}/main/postgresql.conf"
+        regexp: "^#?listen_addresses"
+        line: "listen_addresses = '*'"
+      become: yes
+
+    # Allow remote connections
+    - name: Allow remote connections to PostgreSQL
+      lineinfile:
+        path: "/etc/postgresql/{{ postgresql_version }}/main/pg_hba.conf"
+        line: "host    all             all             0.0.0.0/0               scram-sha-256"
+      become: yes
+
+    # Restart PostgreSQL again to apply all changes
+    - name: Restart PostgreSQL
+      service:
+        name: postgresql
+        state: restarted
+      become: yes
 
